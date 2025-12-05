@@ -654,6 +654,43 @@ Create a React component that is a PIXEL-PERFECT replica of the captured element
 
         return { success: true };
       });
+
+      // Record credit usage after successful generation
+      await step.run("record-credit-usage", async () => {
+        const convexHttpUrl = getConvexHttpUrl();
+
+        // Import credit cost calculation
+        const MODEL_CREDITS: Record<string, number> = {
+          "x-ai/grok-4.1-fast:free": 1,
+          "openai/gpt-5.1": 2,
+          "anthropic/claude-opus-4.5": 5,
+          "google/gemini-3-pro-preview": 3,
+        };
+        const creditCost = MODEL_CREDITS[modelId] ?? 1;
+
+        const response = await fetch(
+          `${convexHttpUrl}/inngest/recordCreditUsage`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              credits: creditCost,
+              modelId,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          // Log error but don't fail the whole operation
+          console.error(
+            "Failed to record credit usage:",
+            await response.text()
+          );
+        }
+
+        return { success: true, creditsDeducted: creditCost };
+      });
     }
 
     // Handle error case - create error message

@@ -46,6 +46,15 @@ export interface SendMessageOptions {
   images?: ImageAttachment[];
 }
 
+/** Credit error details from API */
+export interface CreditError {
+  code: "INSUFFICIENT_CREDITS" | "NO_SUBSCRIPTION" | "CREDIT_CHECK_FAILED";
+  message: string;
+  remaining: number;
+  required: number;
+  upgradeUrl: string;
+}
+
 export interface UseChatStreamingReturn {
   messages: ChatMessage[];
   isLoading: boolean;
@@ -53,7 +62,11 @@ export interface UseChatStreamingReturn {
   status: StreamingStatus;
   statusText: string;
   streamingSteps: StreamingStep[];
-  error: { message: string; canRetry: boolean } | null;
+  error: {
+    message: string;
+    canRetry: boolean;
+    creditError?: CreditError;
+  } | null;
   sendMessage: (content: string, options?: SendMessageOptions) => Promise<void>;
   retryLastMessage: () => void;
 }
@@ -98,6 +111,7 @@ export function useChatStreaming({
     message: string;
     canRetry: boolean;
     originalMessage?: string;
+    creditError?: CreditError;
   } | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
@@ -458,13 +472,29 @@ export function useChatStreaming({
         // Note: isWaitingForResponse will be cleared when Convex receives assistant message
         pendingUserMessageRef.current = null;
       } catch (err) {
-        const errorMessage =
+        let errorMessage =
           err instanceof Error ? err.message : "An unexpected error occurred";
+        let creditError: CreditError | undefined;
+
+        // Check if this is a credit error (402 response)
+        if (err instanceof Error && err.message.includes("credits")) {
+          // Try to parse credit error details from the error
+          creditError = {
+            code: err.message.includes("subscription")
+              ? "NO_SUBSCRIPTION"
+              : "INSUFFICIENT_CREDITS",
+            message: errorMessage,
+            remaining: 0,
+            required: 0,
+            upgradeUrl: "/pricing",
+          };
+        }
 
         setError({
           message: errorMessage,
-          canRetry: true,
+          canRetry: !creditError, // Don't allow retry for credit errors
           originalMessage: trimmedContent,
+          creditError,
         });
         setStatusText("");
         setIsWaitingForResponse(false); // Clear waiting state on error
@@ -495,7 +525,13 @@ export function useChatStreaming({
     status,
     statusText,
     streamingSteps,
-    error: error ? { message: error.message, canRetry: error.canRetry } : null,
+    error: error
+      ? {
+          message: error.message,
+          canRetry: error.canRetry,
+          creditError: error.creditError,
+        }
+      : null,
     sendMessage,
     retryLastMessage,
   };

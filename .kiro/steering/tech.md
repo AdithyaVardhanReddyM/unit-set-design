@@ -6,7 +6,7 @@
 - **Language**: TypeScript (strict mode enabled)
 - **Styling**: Tailwind CSS v4 with CSS variables
 - **UI Components**: shadcn/ui (New York style)
-- **Authentication**: Clerk
+- **Authentication**: Clerk (with Billing for B2C subscriptions)
 - **Backend/Database**: Convex
 - **State Management**: React 19 with hooks + Context + useReducer
 - **Icons**: Lucide React
@@ -23,12 +23,15 @@
 - **Canvas**: Custom infinite canvas with React Context + useReducer
 - **IDs**: nanoid for unique shape identifiers
 - **AI Agents**: Inngest AgentKit with OpenRouter
+- **AI Streaming**: @inngest/realtime, @inngest/use-agent
 - **AI Sandboxes**: E2B Code Interpreter for isolated execution
 - **Animations**: Framer Motion for UI transitions
 - **Markdown/Code**: Shiki for syntax highlighting, Streamdown for streaming markdown
 - **Resizable Panels**: react-resizable-panels
 - **Drawer**: Vaul for mobile-friendly drawers
 - **Carousel**: Embla Carousel
+- **Scroll Management**: use-stick-to-bottom
+- **Token Counting**: tokenlens
 
 ## AI Components Library
 
@@ -40,6 +43,9 @@ Custom AI UI components in `@/components/ai-elements`:
 - Reasoning/chain-of-thought display
 - Tool execution visualization
 - Web preview components
+- Model selector dropdown
+- Suggestion chips
+- And many more (30+ components)
 
 ## Package Manager
 
@@ -85,6 +91,7 @@ Required environment variables:
 - `@/contexts` - React Context providers
 - `@/lib` - Library utilities
 - `@/lib/canvas` - Canvas utilities and reducers
+- `@/lib/edit-mode` - Visual edit mode utilities
 - `@/hooks` - Custom React hooks
 - `@/types` - TypeScript type definitions
 - `@/convex` - Convex backend (schema, queries, mutations)

@@ -49,4 +49,12 @@ export default defineSchema({
     imageIds: v.optional(v.array(v.id("_storage"))), // Attached image storage IDs
     createdAt: v.number(), // Creation timestamp
   }).index("by_screenId", ["screenId"]),
+
+  // Credit usage tracking for billing
+  creditUsage: defineTable({
+    userId: v.string(), // Clerk user ID
+    creditsUsed: v.number(), // Total credits used in current billing period
+    periodStart: v.number(), // Timestamp of billing period start (1st of month)
+    lastUpdated: v.number(), // Last update timestamp
+  }).index("by_userId", ["userId"]),
 });

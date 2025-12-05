@@ -187,4 +187,96 @@ http.route({
   }),
 });
 
+/**
+ * HTTP endpoint for Inngest workflow to get credit usage
+ * This endpoint is called to check user's credit balance before processing
+ */
+http.route({
+  path: "/inngest/getCreditUsage",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const { userId } = await request.json();
+
+      if (!userId) {
+        return new Response(JSON.stringify({ error: "userId is required" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      const usage = await ctx.runQuery(
+        internal.credits.internalGetCreditUsage,
+        {
+          userId,
+        }
+      );
+
+      return new Response(JSON.stringify(usage), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Error getting credit usage:", error);
+      return new Response(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : "Internal error",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+  }),
+});
+
+/**
+ * HTTP endpoint for Inngest workflow to record credit usage
+ * This endpoint is called after successful AI generation to deduct credits
+ */
+http.route({
+  path: "/inngest/recordCreditUsage",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    try {
+      const { userId, credits, modelId } = await request.json();
+
+      if (!userId || credits === undefined || !modelId) {
+        return new Response(
+          JSON.stringify({
+            error: "userId, credits, and modelId are required",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      await ctx.runMutation(internal.credits.recordCreditUsage, {
+        userId,
+        credits,
+        modelId,
+      });
+
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Error recording credit usage:", error);
+      return new Response(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : "Internal error",
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+  }),
+});
+
 export default http;

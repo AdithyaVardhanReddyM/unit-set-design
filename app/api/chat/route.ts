@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { inngest } from "@/inngest/client";
 import { z } from "zod";
+import { FEATURE_CREDITS, getModelCreditCost } from "@/lib/credits";
 
 // Schema for @inngest/use-agent sendMessage format (wrapped in params)
 const useAgentParamsSchema = z.object({
@@ -39,7 +40,158 @@ const legacySchema = z.object({
   screenId: z.string(),
   projectId: z.string(),
   channelKey: z.string().optional(),
+  modelId: z.string().optional(),
 });
+
+// Credit error response type
+interface CreditError {
+  code: "INSUFFICIENT_CREDITS" | "NO_SUBSCRIPTION" | "CREDIT_CHECK_FAILED";
+  message: string;
+  remaining: number;
+  required: number;
+  upgradeUrl: string;
+}
+
+// Get Convex HTTP endpoint URL
+function getConvexHttpUrl(): string {
+  const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!convexUrl) {
+    throw new Error("NEXT_PUBLIC_CONVEX_URL is not set");
+  }
+  return convexUrl.replace(".convex.cloud", ".convex.site");
+}
+
+// Get billing period start (1st of month)
+function getBillingPeriodStart(): number {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime();
+}
+
+// Validate user has enough credits
+async function validateCredits(
+  userId: string,
+  modelId: string
+): Promise<{
+  valid: boolean;
+  error?: CreditError;
+  remaining: number;
+  totalCredits: number;
+}> {
+  const requiredCredits = getModelCreditCost(modelId);
+
+  try {
+    // Get user's subscription features from Clerk
+    const client = await clerkClient();
+    const user = await client.users.getUser(userId);
+
+    // Check for credit features
+    let totalCredits = 0;
+
+    // Check public metadata for subscription features
+    // Clerk stores subscription info that we can check
+    const publicMetadata = user.publicMetadata as
+      | Record<string, unknown>
+      | undefined;
+    const features = (publicMetadata?.features as string[]) || [];
+
+    // Also check using has() equivalent by checking if user has the features
+    // For server-side, we need to check the user's subscription directly
+    // This is a simplified check - in production you'd use Clerk's subscription API
+    for (const featureId of Object.keys(FEATURE_CREDITS)) {
+      if (features.includes(featureId)) {
+        const credits = FEATURE_CREDITS[featureId];
+        if (credits > totalCredits) {
+          totalCredits = credits;
+        }
+      }
+    }
+
+    // If no features found in metadata, check if user has any active subscription
+    // by checking for the feature flags directly
+    if (totalCredits === 0) {
+      // For now, we'll be lenient and allow users without explicit features
+      // In production, you'd integrate with Clerk's billing API more deeply
+      // Check if user has 50_credits_month or 25_credits_month feature
+      const has50Credits = features.includes("50_credits_month");
+      const has25Credits = features.includes("25_credits_month");
+
+      if (has50Credits) {
+        totalCredits = 50;
+      } else if (has25Credits) {
+        totalCredits = 25;
+      }
+    }
+
+    // No subscription
+    if (totalCredits === 0) {
+      return {
+        valid: false,
+        remaining: 0,
+        totalCredits: 0,
+        error: {
+          code: "NO_SUBSCRIPTION",
+          message:
+            "You need an active subscription to use AI chat. Please subscribe to a plan.",
+          remaining: 0,
+          required: requiredCredits,
+          upgradeUrl: "/pricing",
+        },
+      };
+    }
+
+    // Get credit usage from Convex
+    const convexHttpUrl = getConvexHttpUrl();
+    const usageResponse = await fetch(
+      `${convexHttpUrl}/inngest/getCreditUsage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      }
+    );
+
+    let usedCredits = 0;
+    if (usageResponse.ok) {
+      const usage = await usageResponse.json();
+      const currentPeriodStart = getBillingPeriodStart();
+
+      // Only count usage from current billing period
+      if (usage && usage.periodStart >= currentPeriodStart) {
+        usedCredits = usage.creditsUsed || 0;
+      }
+    }
+
+    const remainingCredits = Math.max(0, totalCredits - usedCredits);
+
+    // Check if user has enough credits
+    if (remainingCredits < requiredCredits) {
+      return {
+        valid: false,
+        remaining: remainingCredits,
+        totalCredits,
+        error: {
+          code: "INSUFFICIENT_CREDITS",
+          message: `You have ${remainingCredits} credits remaining, but this generation requires ${requiredCredits} credits.`,
+          remaining: remainingCredits,
+          required: requiredCredits,
+          upgradeUrl: "/pricing",
+        },
+      };
+    }
+
+    return { valid: true, remaining: remainingCredits, totalCredits };
+  } catch (error) {
+    console.error("Credit validation error:", error);
+    // On error, allow the request but log it
+    // In production, you might want to be more strict
+    return {
+      valid: true,
+      remaining: 0,
+      totalCredits: 0,
+      error: undefined,
+    };
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,7 +218,20 @@ export async function POST(req: NextRequest) {
     // Try legacy format
     const legacyResult = legacySchema.safeParse(body);
     if (legacyResult.success) {
-      const { message, screenId, projectId, channelKey } = legacyResult.data;
+      const { message, screenId, projectId, channelKey, modelId } =
+        legacyResult.data;
+
+      // Validate credits before processing
+      const creditCheck = await validateCredits(
+        userId,
+        modelId || "x-ai/grok-4.1-fast:free"
+      );
+      if (!creditCheck.valid && creditCheck.error) {
+        return NextResponse.json(
+          { error: creditCheck.error.message, creditError: creditCheck.error },
+          { status: 402 }
+        );
+      }
 
       const { ids } = await inngest.send({
         name: "agent/chat.requested",
@@ -76,6 +241,7 @@ export async function POST(req: NextRequest) {
           projectId,
           userId,
           channelKey: channelKey || `screen:${screenId}`,
+          modelId,
         },
       });
 
@@ -129,8 +295,17 @@ async function handleUseAgentFormat(
     | undefined;
   const screenId = state?.screenId || threadId.replace("screen:", "");
   const projectId = state?.projectId || "";
-  const modelId = state?.modelId;
+  const modelId = state?.modelId || "x-ai/grok-4.1-fast:free";
   const imageUrls = state?.imageUrls || [];
+
+  // Validate credits before processing
+  const creditCheck = await validateCredits(authUserId, modelId);
+  if (!creditCheck.valid && creditCheck.error) {
+    return NextResponse.json(
+      { error: creditCheck.error.message, creditError: creditCheck.error },
+      { status: 402 }
+    );
+  }
 
   // Effective userId for data ownership
   const effectiveUserId = authUserId || channelKey;

@@ -11,6 +11,7 @@ Create beautiful, professional, and clean interfaces that balance aesthetics wit
 ## Component Library
 
 - All UI components are available from `@/components/ui` (shadcn/ui)
+- AI components are available from `@/components/ai-elements`
 - Use existing components before creating custom ones
 - Extend shadcn components with composition, not modification
 
@@ -40,6 +41,18 @@ Reference CSS variables from `app/globals.css`:
 **Chart Colors:**
 
 - `bg-chart-1` through `bg-chart-5` for data visualization
+
+### Theme System
+
+The app supports multiple theme presets that users can select per screen:
+
+- **Default**: Dark mode with neutral colors
+- **Claude**: Warm, amber-tinted theme
+- **Vercel**: Minimal black and white
+- **Cyberpunk**: Neon colors with high contrast
+- And more...
+
+Themes are applied by updating CSS variables in the sandbox's `globals.css`. Always use semantic color classes (not hardcoded colors) so themes work correctly.
 
 ### Spacing & Layout
 
@@ -86,6 +99,47 @@ Reference CSS variables from `app/globals.css`:
 - All colors automatically adapt via CSS variables
 - Test both light and dark themes
 
+### Loading States
+
+- Use `Loader` component from `@/components/ai-elements/loader`
+- Show skeleton loaders for content that takes time to load
+- Provide status text during AI operations
+
+### Error States
+
+- Display clear error messages with retry options
+- Use `toast` from Sonner for transient notifications
+- Show inline errors for form validation
+
+## Canvas-Specific UI
+
+### Shape Properties
+
+- Use curated color palette from `properties-utils.ts`
+- Frame fill colors are subtle tints that work on dark canvas
+- Stroke widths: thin (1px), normal (2px), thick (4px)
+- Corner types: sharp (0px), rounded (8px)
+
+### AI Sidebar
+
+- Three tabs: Chat, Edit, Code
+- Streaming status indicators during generation
+- Model selector for AI model choice
+- Image attachment support for vision models
+- Credit display in header
+
+### Code Explorer
+
+- File tree navigation with expand/collapse
+- Syntax highlighting with Shiki
+- Cached file content from generation
+
+### Edit Mode
+
+- Visual element selection in preview
+- Style controls for appearance, layout, typography
+- CSS to Tailwind conversion on save
+
 ## Best Practices
 
 - Keep interfaces clean and uncluttered
@@ -93,4 +147,5 @@ Reference CSS variables from `app/globals.css`:
 - Prioritize readability and scannability
 - Provide clear visual feedback for interactions
 - Maintain loading and error states
-- Use animations sparingly and purposefully
+- Use animations sparingly and purposefully (Framer Motion)
+- Always use semantic theme colors for generated UI

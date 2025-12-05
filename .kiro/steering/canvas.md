@@ -41,10 +41,11 @@ The canvas uses two separate reducers for clean separation of concerns:
 - `LineShape`: Straight lines
 - `TextShape`: Text with full typography controls
 - `GeneratedUIShape`: AI-generated UI components
+- `ScreenShape`: AI screen shapes linked to Convex records
 
 **Tool Types:**
 
-- `Tool`: "select" | "hand" | "frame" | "rect" | "ellipse" | "freedraw" | "arrow" | "line" | "text" | "eraser"
+- `Tool`: "select" | "hand" | "frame" | "rect" | "ellipse" | "freedraw" | "arrow" | "line" | "text" | "eraser" | "screen"
 
 **State Structure:**
 
@@ -67,7 +68,7 @@ The canvas uses two separate reducers for clean separation of concerns:
 **Shapes Reducer** (`lib/canvas/shapes-reducer.ts`):
 
 - `SET_TOOL`: Switch between drawing tools
-- `ADD_*`: Create shapes (FRAME, RECT, ELLIPSE, FREEDRAW, ARROW, LINE, TEXT, GENERATED_UI)
+- `ADD_*`: Create shapes (FRAME, RECT, ELLIPSE, FREEDRAW, ARROW, LINE, TEXT, GENERATED_UI, SCREEN)
 - `UPDATE_SHAPE`: Modify shape properties
 - `REMOVE_SHAPE`: Delete single shape
 - `CLEAR_ALL`: Remove all shapes
@@ -78,6 +79,7 @@ The canvas uses two separate reducers for clean separation of concerns:
 - `PUSH_HISTORY`: Manually push history entry (for batched operations)
 - `LOAD_PROJECT`: Restore entire canvas state
 - `UNDO`, `REDO`: History navigation
+- `REORDER_SHAPE`: Change shape z-index in layers
 
 ### 4. Main Hook (`hooks/use-infinite-canvas.ts`)
 
@@ -148,7 +150,7 @@ The `useInfiniteCanvas` hook provides the complete canvas interaction API:
 
 - `createFrame`, `createRect`, `createEllipse`: Shape creation with defaults
 - `createFreeDraw`, `createArrow`, `createLine`: Path-based shapes
-- `createText`, `createGeneratedUI`: Complex shapes
+- `createText`, `createGeneratedUI`, `createScreen`: Complex shapes
 - Default styling: `{ stroke: "#ffff", strokeWidth: 1 }`
 - Frame-specific styling: transparent stroke, semi-transparent fill
 - Text shapes automatically measure dimensions on creation
@@ -179,6 +181,7 @@ The `useInfiniteCanvas` hook provides the complete canvas interaction API:
 - Font family presets: "sans" | "playful" | "mono"
 - Text alignment options: "left" | "center" | "right"
 - Curated color palette for dark mode (10 colors)
+- Frame fill color palette (10 subtle tints)
 - `getControlsForTool`: Get applicable controls for a tool
 - `getControlsForShapes`: Get controls for selected shapes
 - Conversion utilities: `strokeWidthToPixels`, `cornerTypeToRadius`, `fontFamilyPresetToCSS`
@@ -216,6 +219,25 @@ The `useInfiniteCanvas` hook provides the complete canvas interaction API:
 - `shouldShowGrabCursor`: Determines when to show grab cursor (Space key held)
 - Cursor classes: select, pen, eraser, crosshair, text, move, grab, grabbing
 
+**Containment Utils** (`lib/canvas/containment-utils.ts`):
+
+- Shape containment detection for nested shapes
+- Parent-child relationship tracking
+
+**Theme Utils** (`lib/canvas/theme-utils.ts`):
+
+- Theme preset definitions
+- Theme switching utilities
+
+**Canvas Capture** (`lib/canvas/canvas-capture.ts`):
+
+- Screenshot capture for thumbnails
+
+**Code Explorer Utils** (`lib/canvas/code-explorer-utils.ts`, `code-explorer-types.ts`):
+
+- File tree types and utilities
+- Content caching helpers
+
 ### 6. Persistence Hook (`hooks/use-canvas-persistence.ts`)
 
 Manages canvas state persistence:
@@ -223,13 +245,13 @@ Manages canvas state persistence:
 - Auto-save to localStorage (1 second debounce)
 - Auto-load from localStorage on mount
 - Export/import as JSON
-- Convex integration ready (TODO: implement mutations/queries)
+- Convex integration for cloud sync
 
 ### 7. Canvas Page (`app/dashboard/[projectId]/canvas/page.tsx`)
 
 Main canvas rendering component:
 
-- Wraps content in `CanvasProvider`
+- Wraps content in `CanvasProvider` and `EditModeProvider`
 - Renders toolbar, zoom bar, history pill, save indicator
 - Transforms shapes with viewport scale/translate
 - Renders draft shapes during drawing
@@ -249,6 +271,7 @@ Each shape type has dedicated components:
 - `Arrow.tsx`: Arrows with arrowheads
 - `Stroke.tsx`: Freehand drawing paths
 - `Text.tsx`: Text with full typography controls and editing
+- `Screen.tsx`: AI-generated screen with iframe preview
 
 **Preview Components (Draft Rendering):**
 
@@ -258,6 +281,8 @@ Each shape type has dedicated components:
 - `LinePreview.tsx`: Line preview during drawing
 - `ArrowPreview.tsx`: Arrow preview during drawing
 - `StrokePreview.tsx`: Freehand stroke preview during drawing
+- `ScreenPreview.tsx`: Screen preview during placement
+- `ScreenCursorPreview.tsx`: Screen cursor indicator
 
 ### 9. UI Components (`components/canvas/`)
 
@@ -267,11 +292,23 @@ Each shape type has dedicated components:
 - `BoundingBox.tsx`: Selection bounds with 8-point resize handles (corners + edges)
 - `SelectionBox.tsx`: Multi-select rectangle (drag on empty space)
 - `ShapePropertiesBar.tsx`: Properties bar for tool/shape settings
-- `LayersSidebar.tsx`: Layer list with shape selection and visibility
+- `LayersSidebar.tsx`: Layer list with shape selection, visibility, and reordering
 - `SaveIndicator.tsx`: Auto-save status indicator
 - `BackButton.tsx`: Navigation back to dashboard
-- `CanvasActions.tsx`: Canvas action buttons (export, etc.)
-- `ChatSidebar.tsx`: AI chat assistant panel (toggle button + message interface)
+- `CanvasActions.tsx`: Canvas action buttons (export, share, etc.)
+- `AISidebar.tsx`: AI chat assistant panel (toggle button + message interface)
+- `CreditBar.tsx`: Credit usage display
+- `EditModePanel.tsx`: Visual edit mode controls
+- `ElementPropertiesPanel.tsx`: Element properties editor
+- `GenerateButton.tsx`: AI generation trigger
+- `ScreenToolbar.tsx`: Screen-specific toolbar
+- `StreamingIndicator.tsx`: AI streaming status
+- `ThemeSelector.tsx`: Theme selection dropdown
+- `ShareCanvasModal.tsx`: Canvas sharing modal
+- `DeleteScreenModal.tsx`: Screen deletion confirmation
+- `RemixFromWebModal.tsx`: Remix from web modal
+- `InsufficientCreditsOverlay.tsx`: Credit limit overlay
+- `ExtensionChip.tsx`: Browser extension promotion
 
 ### 10. Property Controls (`components/canvas/property-controls/`)
 
@@ -283,8 +320,27 @@ Reusable property control components:
 - `CornerTypeControl.tsx`: Sharp/rounded corner toggle
 - `FontFamilyControl.tsx`: Sans/playful/mono font selector
 - `TextAlignControl.tsx`: Left/center/right alignment
+- `DimensionsControl.tsx`: Width/height display
+- `FrameFillPicker.tsx`: Frame fill color selection
 
-### 11. Cursor Management (`hooks/use-canvas-cursor.ts`)
+### 11. Code Explorer (`components/canvas/code-explorer/`)
+
+Browse and view generated code:
+
+- `CodeExplorer.tsx`: Main panel with file tree and viewer
+- `FileTree.tsx`: Hierarchical file navigation
+- `CodeViewer.tsx`: Syntax-highlighted code display with Shiki
+
+### 12. Edit Mode (`components/canvas/edit-mode/`)
+
+Visual editing of generated UI:
+
+- `AppearanceSection.tsx`: Colors, backgrounds, borders
+- `LayoutSection.tsx`: Spacing, sizing, positioning
+- `TypographySection.tsx`: Font, size, weight, alignment
+- `ImageSection.tsx`: Image source and alt text
+
+### 13. Cursor Management (`hooks/use-canvas-cursor.ts`)
 
 **Cursor Hook:**
 
@@ -350,6 +406,12 @@ Reusable property control components:
 - Text dimensions auto-calculated on creation
 - Supports full typography: font family, size, weight, style, alignment, decoration, line height, letter spacing, text transform
 
+**Screen Tool:**
+
+- Click to place AI screen at cursor position
+- Creates linked Convex screen record
+- Opens AI sidebar for generation
+
 **Eraser Tool:**
 
 - Click or drag to erase shapes
@@ -364,7 +426,7 @@ Reusable property control components:
 - Drag selected shapes to move (all selected shapes move together)
 - Stores initial positions for all selected shapes in ref
 - Calculates delta from move start and applies to all shapes
-- Supports moving all shape types: frames, rects, ellipses, freedraw, arrows, lines, text, generatedui
+- Supports moving all shape types: frames, rects, ellipses, freedraw, arrows, lines, text, generatedui, screen
 - Movement preserves shape structure (points for freedraw, start/end for lines/arrows)
 - History batching: entire move operation is single undo entry
 
@@ -376,7 +438,7 @@ Reusable property control components:
   - `shape-resize-move`: Updates shape during resize with clientX/Y
   - `shape-resize-end`: Finalizes resize and clears resize data
 - Supports all shape types with appropriate transformations:
-  - Frames, rects, ellipses, generatedui: Direct x, y, w, h updates
+  - Frames, rects, ellipses, generatedui, screen: Direct x, y, w, h updates
   - Freedraw: Scales points proportionally within new bounds
   - Arrows/lines: Special handling for line-start and line-end handles, scales diagonal lines
   - Text: Proportional scaling of font size, line height, letter spacing
@@ -477,6 +539,18 @@ COLOR_PALETTE = [
   "#a78bfa",
   "#f472b6",
 ];
+FRAME_FILL_PALETTE = [
+  "rgba(255, 255, 255, 0.05)",
+  "rgba(251, 146, 60, 0.08)",
+  "rgba(96, 165, 250, 0.08)",
+  "rgba(74, 222, 128, 0.08)",
+  "rgba(167, 139, 250, 0.08)",
+  "rgba(244, 114, 182, 0.08)",
+  "rgba(34, 211, 238, 0.08)",
+  "rgba(250, 204, 21, 0.08)",
+  "rgba(248, 113, 113, 0.08)",
+  "rgba(161, 161, 170, 0.08)",
+];
 
 // Tool hotkeys (use-infinite-canvas.ts)
 TOOL_HOTKEYS = {
@@ -498,13 +572,16 @@ TOOL_HOTKEYS = {
 - [x] Undo/Redo with history tracking
 - [x] Copy/paste functionality
 - [x] Shape properties bar (stroke, color, corners)
-- [x] Layers sidebar
+- [x] Layers sidebar with reordering
 - [x] Save indicator
 - [x] Zoom to fit
+- [x] Screen shapes for AI generation
+- [x] Code explorer
+- [x] Visual edit mode
+- [x] Theme system
 - [ ] Collaborative editing via WebSocket
 - [ ] Touch gesture support (pinch-to-zoom)
 - [ ] Grid and shape snapping
-- [ ] Layer management (z-index reordering)
 - [ ] Shape grouping
 - [ ] Duplicate functionality (Ctrl/Cmd+D)
 - [ ] Export to image/SVG

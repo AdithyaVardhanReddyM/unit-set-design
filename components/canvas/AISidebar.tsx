@@ -74,6 +74,9 @@ import {
   modelSupportsVision,
 } from "@/lib/ai-models";
 import { CreditBar } from "@/components/canvas/CreditBar";
+import { InsufficientCreditsOverlay } from "@/components/canvas/InsufficientCreditsOverlay";
+import { useCreditBalance } from "@/hooks/use-credit-balance";
+import { getModelCreditCost } from "@/lib/credits";
 import { nanoid } from "nanoid";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -288,7 +291,7 @@ export function AISidebar({
             )}
 
             {/* Input */}
-            <ChatInput
+            <ChatInputWithCredits
               onSubmit={handleSubmit}
               status={chatStatus}
               initialImage={initialImage}
@@ -523,7 +526,11 @@ function ChatMessageItem({ message }: { message: ChatMessage }) {
       {!isError && !isStreaming && (
         <div className="flex items-center gap-2 ml-8.5 text-[10px] text-muted-foreground/60">
           <span className="flex items-center gap-1">
-            <Sparkles className="h-2.5 w-2.5" />5 credits
+            <Sparkles className="h-2.5 w-2.5" />
+            {message.modelId ? getModelCreditCost(message.modelId) : 1} credit
+            {(message.modelId ? getModelCreditCost(message.modelId) : 1) !== 1
+              ? "s"
+              : ""}
           </span>
           <span className="text-muted-foreground/30">•</span>
           <span>{formatMessageTime(message.timestamp)}</span>
@@ -556,7 +563,8 @@ interface ImageAttachment {
   previewUrl: string;
 }
 
-function ChatInput({
+/** Wrapper component that integrates credit system with ChatInput */
+function ChatInputWithCredits({
   onSubmit,
   status,
   initialImage,
@@ -577,6 +585,45 @@ function ChatInput({
   initialPrompt?: string;
   initialModelId?: string;
   onInitialDataConsumed?: () => void;
+}) {
+  const creditBalance = useCreditBalance();
+
+  return (
+    <ChatInput
+      onSubmit={onSubmit}
+      status={status}
+      initialImage={initialImage}
+      initialPrompt={initialPrompt}
+      initialModelId={initialModelId}
+      onInitialDataConsumed={onInitialDataConsumed}
+      creditBalance={creditBalance}
+    />
+  );
+}
+
+function ChatInput({
+  onSubmit,
+  status,
+  initialImage,
+  initialPrompt,
+  initialModelId,
+  onInitialDataConsumed,
+  creditBalance,
+}: {
+  onSubmit: (
+    message: PromptInputMessage,
+    options: {
+      modelId: string;
+      images: ImageAttachment[];
+      extensionData?: CapturedElement;
+    }
+  ) => void;
+  status: ChatInputStatus;
+  initialImage?: Blob;
+  initialPrompt?: string;
+  initialModelId?: string;
+  onInitialDataConsumed?: () => void;
+  creditBalance: ReturnType<typeof useCreditBalance>;
 }) {
   const [inputValue, setInputValue] = useState("");
   const [extensionContent, setExtensionContent] =
@@ -757,6 +804,11 @@ function ChatInput({
   const showVisionWarning =
     pendingImages.length > 0 && !modelSupportsVision(selectedModel);
 
+  // Check if user can afford the selected model
+  const modelCost = getModelCreditCost(selectedModel);
+  const canAfford = creditBalance.canAfford(selectedModel);
+  const isDisabled = !canAfford && !creditBalance.isLoading;
+
   return (
     <div className="p-3 pt-2">
       {/* Hidden file input */}
@@ -770,9 +822,23 @@ function ChatInput({
       />
 
       {/* Credit bar and input container */}
-      <div className="rounded-xl overflow-hidden border border-border/40 bg-muted/30 hover:bg-muted/40 transition-colors focus-within:bg-muted/50 focus-within:border-border/60 focus-within:ring-[3px] focus-within:ring-primary/70 focus-within:ring-offset-0 focus-within:shadow-[0_0_24px_rgba(249,115,22,0.35)]">
+      <div className="relative rounded-xl overflow-hidden border border-border/40 bg-muted/30 hover:bg-muted/40 transition-colors focus-within:bg-muted/50 focus-within:border-border/60 focus-within:ring-[3px] focus-within:ring-primary/70 focus-within:ring-offset-0 focus-within:shadow-[0_0_24px_rgba(249,115,22,0.35)]">
+        {/* Insufficient credits overlay */}
+        {isDisabled && (
+          <InsufficientCreditsOverlay
+            remainingCredits={creditBalance.remainingCredits}
+            requiredCredits={modelCost}
+            hasSubscription={creditBalance.hasSubscription}
+          />
+        )}
+
         {/* Credit Bar */}
-        <CreditBar credits={30} selectedModelId={selectedModel} />
+        <CreditBar
+          remainingCredits={creditBalance.remainingCredits}
+          totalCredits={creditBalance.totalCredits}
+          selectedModelId={selectedModel}
+          isLoading={creditBalance.isLoading}
+        />
 
         <PromptInput
           onSubmit={handleSubmit}
@@ -903,6 +969,7 @@ function ChatInput({
               status={status}
               size="icon-sm"
               className="h-8 w-8 rounded-lg"
+              disabled={isDisabled}
             />
           </PromptInputFooter>
         </PromptInput>
